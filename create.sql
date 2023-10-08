@@ -41,6 +41,7 @@ DECLARE
     allowed_account_ids BIGINT[];
     record_to_insert    RECORD;
     i                   INT;
+    sql_text            TEXT;
 BEGIN
     source_table_name := TG_ARGV[0];
     target_table_name := TG_ARGV[1];
@@ -60,10 +61,10 @@ BEGIN
 
     RAISE NOTICE 'Record.id: %', record_to_insert.id;
 
+    -- TODO: обработка удаления     
     IF record_to_insert.account_id = ANY (allowed_account_ids) THEN
-        EXECUTE 'INSERT INTO ' || target_table_name ||
-                ' (id, account_id, client_id, items_price) VALUES($1, $2, $3, $4)'
-            USING record_to_insert.id, record_to_insert.account_id, record_to_insert.client_id, record_to_insert.items_price;
+        sql_text := 'INSERT INTO ' || target_table_name || ' SELECT * FROM ' || source_table_name || ' WHERE id = $1';
+        EXECUTE sql_text USING NEW.id;
     END IF;
 
     RETURN NEW;
@@ -79,4 +80,4 @@ CREATE OR REPLACE TRIGGER dynamic_copy_trigger
 EXECUTE FUNCTION dynamic_copy('p1', 'p3', 3);
 
 INSERT INTO p1(id, "account_id", "client_id", "items_price")
-VALUES (-4, 3, 72892, 372.38);
+VALUES (-5, 3, 72892, 372.38);
