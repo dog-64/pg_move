@@ -7,7 +7,7 @@
 
 ## Для таблиц
 
-смотри create_p.sql
+смотри `tables_example.sql`
 
 ```postgresql
 -- PSQL
