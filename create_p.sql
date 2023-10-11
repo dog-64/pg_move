@@ -34,20 +34,46 @@ CREATE UNIQUE INDEX p2_pkey ON p2(id int8_ops,account_id int8_ops);
 CREATE OR REPLACE FUNCTION sync_tables()
 RETURNS TRIGGER AS $$
 DECLARE
+  source_table text;
+  target_table text;
   column_list text;
   query text;
+  account_ids bigint[];
+  current_account_id bigint;
 BEGIN
+  source_table := TG_ARGV[0]; -- таблица-откуда
+  target_table := TG_ARGV[1]; -- таблица-куда
+  account_ids := TG_ARGV[2:]; -- список id копируемых account_id, как массив
+
+  -- Получаем account_id текущей строки в зависимости от операции
+  IF TG_OP = 'DELETE' THEN
+    current_account_id := OLD.account_id;
+  ELSE
+    current_account_id := NEW.account_id;
+  END IF;
+
+  -- Если текущая строка не соответствует ни одному из значений account_id, выход из функции
+  IF NOT current_account_id = ANY(account_ids) THEN
+    IF TG_OP = 'DELETE' THEN
+      RETURN OLD;
+    ELSE
+      RETURN NEW;
+    END IF;
+  END IF;
+
+  -- Получаем список колонок
   SELECT string_agg(quote_ident(column_name), ', ')
   INTO column_list
   FROM information_schema.columns
-  WHERE table_name = TG_TABLE_NAME;
+  WHERE table_name = source_table;
 
+  -- Формируем SQL-запрос в зависимости от операции
   IF TG_OP = 'INSERT' THEN 
-    query := format('INSERT INTO p2 (%s) SELECT %s FROM p1 WHERE id = %s', column_list, column_list, NEW.id);
+    query := format('INSERT INTO %s (%s) SELECT %s FROM %s WHERE id = %s', target_table, column_list, column_list, source_table, NEW.id);
   ELSIF TG_OP = 'UPDATE' THEN
-    query := format('UPDATE p2 SET (%s) = (SELECT %s FROM p1 WHERE id = %s) WHERE id = %s', column_list, column_list, NEW.id, OLD.id);
+    query := format('UPDATE %s SET (%s) = (SELECT %s FROM %s WHERE id = %s) WHERE id = %s', target_table, column_list, column_list, source_table, NEW.id, OLD.id);
   ELSIF TG_OP = 'DELETE' THEN
-    query := format('DELETE FROM p2 WHERE id = %s', OLD.id);
+    query := format('DELETE FROM %s WHERE id = %s', target_table, OLD.id);
   END IF;
 
   EXECUTE query;
@@ -61,10 +87,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-
+-- Создание триггера с параметрами
 CREATE TRIGGER copy_changes
 AFTER INSERT OR UPDATE OR DELETE ON p1
-FOR EACH ROW EXECUTE PROCEDURE sync_tables();
+FOR EACH ROW EXECUTE FUNCTION sync_tables('p1', 'p2', 1, 2, 3, 4);
 
 
 -- -----------------
