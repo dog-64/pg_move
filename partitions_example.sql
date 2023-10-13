@@ -1,8 +1,7 @@
 -- вариант переноса изменений в таблице p1 в p2 
-ROLLBACK ;
+ROLLBACK;
 DROP TABLE IF EXISTS orders_1;
 DROP TABLE IF EXISTS orders_3;
-TRUNCATE TABLE orders_3;
 
 DROP TABLE IF EXISTS orders;
 DROP SEQUENCE orders_id_seq;
@@ -25,16 +24,16 @@ CREATE TABLE orders_default PARTITION OF orders
     DEFAULT;
 CREATE TABLE orders_1 PARTITION OF orders
     FOR VALUES FROM (1) TO (3); -- 3 не включается
-CREATE INDEX idx_orders_1_account_id ON orders_1(account_id);
+CREATE INDEX idx_orders_1_account_id ON orders_1 (account_id);
 
 CREATE TABLE orders_3
 (
-    id          bigint DEFAULT NEXTVAL('orders_id_seq'::regclass),
-    account_id  bigint,
-    client_id   bigint NOT NULL,
-    items_price numeric(10, 2),
+    id          bigint DEFAULT NEXTVAL('orders_id_seq'::regclass) NOT NULL,
+    account_id  bigint                                            NOT NULL,
+    client_id   bigint                                            NOT NULL,
+    items_price numeric(10, 2)
 --     PRIMARY KEY (account_id, id)
-    PRIMARY KEY (id)
+--     PRIMARY KEY (id)
 );
 
 -- PSQL
@@ -42,14 +41,11 @@ BEGIN;
 -- Отключаем журналирование транзакций для увеличения скорости вставки
 SET LOCAL SYNCHRONOUS_COMMIT TO 'off';
 
--- Заполняем таблицу
 INSERT INTO orders (account_id, client_id, items_price)
-SELECT FLOOR(RANDOM() * 2 + 1)::bigint,                   -- случайное значение для account_id между 1 и 10
+SELECT FLOOR(RANDOM() * 2 + 1)::bigint,                    -- случайное значение для account_id между 1 и 10
        FLOOR(RANDOM() * 10000)::bigint,                    -- случайное значение для client_id
        ROUND((RANDOM() * 100)::numeric, 2)::numeric(10, 2) -- случайное значение для items_price
-FROM GENERATE_SERIES(1, 10000000);
-
--- Возвращаем настройки к исходным значениям и завершаем транзакцию
+FROM GENERATE_SERIES(1, 1000000);
 COMMIT;
 
 CREATE OR REPLACE FUNCTION f_sync_tables_by_account_id()
@@ -112,10 +108,11 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER sync_tables_by_account_id ON orders;
-DROP TRIGGER sync_tables_by_account_id ON orders_1;
+-- DROP TRIGGER sync_tables_by_account_id ON orders;
+-- DROP TRIGGER sync_tables_by_account_id ON orders_1;
 
 -- Создание триггера с параметрами
+-- TODO: вынести в свою схему account_move.
 CREATE OR REPLACE TRIGGER sync_tables_by_account_id
     AFTER INSERT OR UPDATE OR DELETE
     ON orders_1
@@ -126,17 +123,12 @@ EXECUTE FUNCTION f_sync_tables_by_account_id('orders_1', 'orders_3', 2);
 INSERT INTO orders(account_id, client_id, items_price)
 VALUES (2, 7, 8);
 
-INSERT INTO orders_3 (id, account_id, client_id, items_price)
-SELECT id, account_id, client_id, items_price
-FROM orders_3
-WHERE id = 10000008;
-
 -- Проверка - после выполнения в p2 НЕ ДОЛЖНА появится запись 
 INSERT INTO orders(account_id, client_id, items_price)
 VALUES (1, 7, 8);
 
 -- основное копирование, после установки триггера
--- основное копирование, после установки триггера
+
 CREATE OR REPLACE FUNCTION copy_between_tables_by_accounts(source_table text, target_table text, VARIADIC account_ids bigint[])
     RETURNS void
     LANGUAGE plpgsql AS
@@ -168,28 +160,52 @@ $$;
 
 
 -- PSQL
--- Отключаем журналирование транзакций для увеличения скорости вставки
--- если нужно чистить - то не в транзакции
--- TRUNCATE p2;
+-- TODO: сделать функцию
+-- TODO: вынести в свою схему account_move.
 BEGIN;
 SELECT copy_between_tables('orders_1', 'orders_3', 2);
+
+ALTER TABLE orders
+    DETACH PARTITION orders_1;
+-- TODO: для прода - удаление пачками, в функции
 DELETE FROM orders_1 WHERE account_id = 2;
-COMMIT;
+ALTER TABLE orders
+    ATTACH PARTITION orders_1 FOR VALUES FROM (1) TO (2);
+ALTER TABLE orders_3
+    ADD CONSTRAINT account_id_check CHECK (account_id BETWEEN 1 AND 5000000);
+ALTER TABLE orders
+    ATTACH PARTITION orders_3 FOR VALUES FROM (2) TO (3);
+
+DROP TRIGGER sync_tables_by_account_id ON orders_1;
 END;
+
+DO $$ 
+DECLARE
+    row_count integer;
+BEGIN
+    LOOP
+        DELETE FROM orders_1 WHERE account_id = 1 AND id IN (SELECT id FROM orders_1 WHERE account_id = 1 LIMIT 1000);
+        GET DIAGNOSTICS row_count = ROW_COUNT;
+        IF row_count = 0 THEN
+            EXIT;
+        END IF;
+    END LOOP;
+END $$;
 
 -- тесты
-DO $$ 
-DECLARE 
-    v_exists BOOLEAN;
-BEGIN
-    SELECT EXISTS(SELECT 1 FROM orders_1 WHERE account_id = 2) INTO v_exists;
+DO
+$$
+    DECLARE
+        v_exists BOOLEAN;
+    BEGIN
+        SELECT EXISTS(SELECT 1 FROM orders_1 WHERE account_id = 2) INTO v_exists;
 
-    IF NOT v_exists THEN
-        -- Вставьте здесь ваш код, который должен выполниться, если записей с account_id = 2 нет
-        RAISE NOTICE 'Нет записей с account_id = 2';
-    ELSE
-        -- Вставьте здесь ваш код, который должен выполниться, если записи с account_id = 2 существуют
-        RAISE NOTICE 'Записи с account_id = 2 существуют';
-    END IF;
-END;
+        IF NOT v_exists THEN
+            -- Вставьте здесь ваш код, который должен выполниться, если записей с account_id = 2 нет
+            RAISE NOTICE 'Нет записей с account_id = 2';
+        ELSE
+            -- Вставьте здесь ваш код, который должен выполниться, если записи с account_id = 2 существуют
+            RAISE NOTICE 'Записи с account_id = 2 существуют';
+        END IF;
+    END;
 $$;
