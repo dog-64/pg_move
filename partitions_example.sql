@@ -1,6 +1,9 @@
 -- вариант переноса изменений в таблице p1 в p2 
+ROLLBACK ;
 DROP TABLE IF EXISTS orders_1;
 DROP TABLE IF EXISTS orders_3;
+TRUNCATE TABLE orders_3;
+
 DROP TABLE IF EXISTS orders;
 DROP SEQUENCE orders_id_seq;
 
@@ -22,6 +25,7 @@ CREATE TABLE orders_default PARTITION OF orders
     DEFAULT;
 CREATE TABLE orders_1 PARTITION OF orders
     FOR VALUES FROM (1) TO (3); -- 3 не включается
+CREATE INDEX idx_orders_1_account_id ON orders_1(account_id);
 
 CREATE TABLE orders_3
 (
@@ -34,16 +38,13 @@ CREATE TABLE orders_3
 );
 
 -- PSQL
--- Включаем таймер для замера времени выполнения
-\timing on
-
--- Отключаем журналирование транзакций для увеличения скорости вставки
 BEGIN;
+-- Отключаем журналирование транзакций для увеличения скорости вставки
 SET LOCAL SYNCHRONOUS_COMMIT TO 'off';
 
 -- Заполняем таблицу
 INSERT INTO orders (account_id, client_id, items_price)
-SELECT FLOOR(RANDOM() * 10 + 1)::bigint,                   -- случайное значение для account_id между 1 и 10
+SELECT FLOOR(RANDOM() * 2 + 1)::bigint,                   -- случайное значение для account_id между 1 и 10
        FLOOR(RANDOM() * 10000)::bigint,                    -- случайное значение для client_id
        ROUND((RANDOM() * 100)::numeric, 2)::numeric(10, 2) -- случайное значение для items_price
 FROM GENERATE_SERIES(1, 10000000);
@@ -65,11 +66,22 @@ BEGIN
     source_table := TG_ARGV[0]; -- таблица-откуда
     target_table := TG_ARGV[1]; -- таблица-куда
     account_ids := TG_ARGV[2:];
-    current_account_id := NEW.account_id;
+    -- список id копируемых account_id, как массив
+
+    -- Получаем account_id текущей строки в зависимости от операции
+    IF TG_OP = 'DELETE' THEN
+        current_account_id := OLD.account_id;
+    ELSE
+        current_account_id := NEW.account_id;
+    END IF;
 
     -- Если текущая строка не соответствует ни одному из значений account_id, выход из функции
-    IF current_account_id != ANY (account_ids) THEN
-        RETURN NEW;
+    IF NOT current_account_id = ANY (account_ids) THEN
+        IF TG_OP = 'DELETE' THEN
+            RETURN OLD;
+        ELSE
+            RETURN NEW;
+        END IF;
     END IF;
 
     -- Получаем список колонок
@@ -78,19 +90,24 @@ BEGIN
     FROM information_schema.columns
     WHERE table_name = source_table;
 
-    -- Формируем SQL-запрос для операции INSERT
-    query := FORMAT('INSERT INTO %s (%s) SELECT %s FROM %s WHERE id = %s', target_table, column_list, column_list,
-                    source_table, NEW.id);
+    -- Формируем SQL-запрос в зависимости от операции
+    IF TG_OP = 'INSERT' THEN
+        query := FORMAT('INSERT INTO %s (%s) SELECT %s FROM %s WHERE id = %s', target_table, column_list, column_list,
+                        source_table, NEW.id);
+    ELSIF TG_OP = 'UPDATE' THEN
+        query := FORMAT('UPDATE %s SET (%s) = (SELECT %s FROM %s WHERE id = %s) WHERE id = %s', target_table,
+                        column_list, column_list, source_table, NEW.id, OLD.id);
+    ELSIF TG_OP = 'DELETE' THEN
+        query := FORMAT('DELETE FROM %s WHERE id = %s', target_table, OLD.id);
+    END IF;
 
-    BEGIN
-        EXECUTE query;
-    EXCEPTION
-        WHEN OTHERS THEN
-            RAISE WARNING 'Ошибка: %', SQLERRM;
-            RETURN NULL;
-    END;
+    EXECUTE query;
 
-    RETURN NEW;
+    IF TG_OP = 'DELETE' THEN
+        RETURN OLD;
+    ELSE
+        RETURN NEW;
+    END IF;
 
 END;
 $$ LANGUAGE plpgsql;
@@ -99,7 +116,7 @@ DROP TRIGGER sync_tables_by_account_id ON orders;
 DROP TRIGGER sync_tables_by_account_id ON orders_1;
 
 -- Создание триггера с параметрами
-CREATE OR REPLACE  TRIGGER sync_tables_by_account_id
+CREATE OR REPLACE TRIGGER sync_tables_by_account_id
     AFTER INSERT OR UPDATE OR DELETE
     ON orders_1
     FOR EACH ROW
@@ -109,7 +126,10 @@ EXECUTE FUNCTION f_sync_tables_by_account_id('orders_1', 'orders_3', 2);
 INSERT INTO orders(account_id, client_id, items_price)
 VALUES (2, 7, 8);
 
-INSERT INTO orders_3 (id, account_id, client_id, items_price) SELECT id, account_id, client_id, items_price FROM orders_3 WHERE id = 10000008;
+INSERT INTO orders_3 (id, account_id, client_id, items_price)
+SELECT id, account_id, client_id, items_price
+FROM orders_3
+WHERE id = 10000008;
 
 -- Проверка - после выполнения в p2 НЕ ДОЛЖНА появится запись 
 INSERT INTO orders(account_id, client_id, items_price)
@@ -144,7 +164,7 @@ END;
 $$;
 
 -- Пример использования функции:
-SELECT copy_between_tables_by_accounts('p1', 'p2', 1, 2, 3, 4);
+-- SELECT copy_between_tables_by_accounts('p1', 'p2', 1, 2, 3, 4);
 
 
 -- PSQL
@@ -152,11 +172,24 @@ SELECT copy_between_tables_by_accounts('p1', 'p2', 1, 2, 3, 4);
 -- если нужно чистить - то не в транзакции
 -- TRUNCATE p2;
 BEGIN;
--- на проде - Создание триггера с параметрами
--- CREATE TRIGGER copy_changes
-
-SELECT copy_between_tables('p1', 'p2', 1);
-
--- на проде - удаление порциями, и можно не сразу
--- 	DELETE FROM p1 WHERE id IN (1);
+SELECT copy_between_tables('orders_1', 'orders_3', 2);
+DELETE FROM orders_1 WHERE account_id = 2;
 COMMIT;
+END;
+
+-- тесты
+DO $$ 
+DECLARE 
+    v_exists BOOLEAN;
+BEGIN
+    SELECT EXISTS(SELECT 1 FROM orders_1 WHERE account_id = 2) INTO v_exists;
+
+    IF NOT v_exists THEN
+        -- Вставьте здесь ваш код, который должен выполниться, если записей с account_id = 2 нет
+        RAISE NOTICE 'Нет записей с account_id = 2';
+    ELSE
+        -- Вставьте здесь ваш код, который должен выполниться, если записи с account_id = 2 существуют
+        RAISE NOTICE 'Записи с account_id = 2 существуют';
+    END IF;
+END;
+$$;
