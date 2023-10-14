@@ -81,10 +81,12 @@ EXECUTE FUNCTION f_sync_tables_by_account_id('orders_1', 'orders_3', 2);
 -- Проверка - после выполнения в orders_2 ДОЛЖНА появится запись 
 INSERT INTO orders(account_id, client_id, items_price)
 VALUES (1, 2, 3);
+CALL p_assert('SELECT EXISTS(SELECT 1 FROM orders_2 WHERE account_id = 1)');
 
 -- Проверка - после выполнения в orders_3 ДОЛЖНА появится запись 
 INSERT INTO orders(account_id, client_id, items_price)
 VALUES (2, 3, 4.1);
+CALL p_assert('SELECT EXISTS(SELECT 1 FROM orders_3 WHERE account_id = 2)');
 
 BEGIN;
 SELECT f_copy_between_tables_by_accounts('orders_1', 'orders_2', 1);
@@ -95,15 +97,19 @@ ALTER TABLE orders
 -- DELETE очень долго - проще пересоздать раздел, это лучше и потому что первоначальный раздел сохраняется неизменным и его можно использовать, если проблемы 
 ALTER TABLE orders_2
     ADD CONSTRAINT account_id_check CHECK (account_id BETWEEN 1 AND 5000000);
-ALTER TABLE orders_2 DROP CONSTRAINT orders_2_pkey;
+ALTER TABLE orders_2
+    DROP CONSTRAINT orders_2_pkey;
 DROP INDEX IF EXISTS orders_2_pkey;
-ALTER TABLE orders ATTACH PARTITION orders_2 FOR VALUES FROM (1) TO (2);
+ALTER TABLE orders
+    ATTACH PARTITION orders_2 FOR VALUES FROM (1) TO (2);
 
 ALTER TABLE orders_3
     ADD CONSTRAINT account_id_check CHECK (account_id BETWEEN 1 AND 5000000);
-ALTER TABLE orders_3 DROP CONSTRAINT orders_3_pkey;
+ALTER TABLE orders_3
+    DROP CONSTRAINT orders_3_pkey;
 DROP INDEX IF EXISTS orders_3_pkey;
-ALTER TABLE orders ATTACH PARTITION orders_3 FOR VALUES FROM (2) TO (3);
+ALTER TABLE orders
+    ATTACH PARTITION orders_3 FOR VALUES FROM (2) TO (3);
 -- DROP TABLE orders_1
 COMMIT;
 END;
@@ -111,19 +117,12 @@ DROP TRIGGER sync_tables_by_account_id_1 ON orders_1;
 DROP TRIGGER sync_tables_by_account_id_2 ON orders_1;
 
 -- тесты
-DO
-$$
-    DECLARE
-        v_exists BOOLEAN;
-    BEGIN
-        SELECT EXISTS(SELECT 1 FROM orders_1 WHERE account_id = 2) INTO v_exists;
+CALL p_assert('SELECT EXISTS(SELECT 1 FROM orders WHERE account_id = 1)');
+SELECT (SELECT count(*) FROM orders_1) = (SELECT count(*) FROM orders_1 WHERE account_id = 1);
+CALL p_assert('SELECT EXISTS(SELECT 1 FROM orders WHERE account_id = 2)');
 
-        IF NOT v_exists THEN
-            -- Вставьте здесь ваш код, который должен выполниться, если записей с account_id = 2 нет
-            RAISE NOTICE 'Нет записей с account_id = 2';
-        ELSE
-            -- Вставьте здесь ваш код, который должен выполниться, если записи с account_id = 2 существуют
-            RAISE NOTICE 'Записи с account_id = 2 существуют';
-        END IF;
-    END;
-$$;
+CALL p_assert('SELECT EXISTS(SELECT 1 FROM orders_2 WHERE account_id = 1)');
+CALL p_assert('SELECT NOT EXISTS(SELECT 1 FROM orders_2 WHERE account_id = 2)');
+
+CALL p_assert('SELECT EXISTS(SELECT 1 FROM orders_3 WHERE account_id = 2)');
+CALL p_assert('SELECT NOT EXISTS(SELECT 1 FROM orders_3 WHERE account_id = 1)');
