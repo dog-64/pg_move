@@ -9,25 +9,19 @@ DECLARE
     account_ids        bigint[];
     current_account_id bigint;
 BEGIN
-    source_table := TG_ARGV[0]; -- таблица-откуда
-    target_table := TG_ARGV[1]; -- таблица-куда
+    source_table := TG_ARGV[0];
+    target_table := TG_ARGV[1];
+    -- TODO: возможно тут нужно уметь передавать диапазоны
     account_ids := TG_ARGV[2:];
-    -- список id копируемых account_id, как массив
 
-    -- Получаем account_id текущей строки в зависимости от операции
     IF TG_OP = 'DELETE' THEN
         current_account_id := OLD.account_id;
     ELSE
         current_account_id := NEW.account_id;
     END IF;
 
-    -- Если текущая строка не соответствует ни одному из значений account_id, выход из функции
     IF NOT current_account_id = ANY (account_ids) THEN
-        IF TG_OP = 'DELETE' THEN
-            RETURN OLD;
-        ELSE
-            RETURN NEW;
-        END IF;
+        RETURN NULL;
     END IF;
 
     -- Получаем список колонок
@@ -49,11 +43,6 @@ BEGIN
 
     EXECUTE query;
 
-    IF TG_OP = 'DELETE' THEN
-        RETURN OLD;
-    ELSE
-        RETURN NEW;
-    END IF;
-
+    RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
