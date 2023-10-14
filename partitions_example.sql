@@ -84,7 +84,7 @@ VALUES (1, 2, 3);
 
 -- Проверка - после выполнения в orders_3 ДОЛЖНА появится запись 
 INSERT INTO orders(account_id, client_id, items_price)
-VALUES (2, 3, 4);
+VALUES (2, 3, 4.1);
 
 BEGIN;
 SELECT f_copy_between_tables_by_accounts('orders_1', 'orders_2', 1);
@@ -109,24 +109,6 @@ COMMIT;
 END;
 DROP TRIGGER sync_tables_by_account_id_1 ON orders_1;
 DROP TRIGGER sync_tables_by_account_id_2 ON orders_1;
-
-DO
-$$
-    DECLARE
-        row_count integer;
-    BEGIN
-        LOOP
-            DELETE
-            FROM orders_1
-            WHERE account_id = 1
-              AND id IN (SELECT id FROM orders_1 WHERE account_id = 1 LIMIT 1000);
-            GET DIAGNOSTICS row_count = ROW_COUNT;
-            IF row_count = 0 THEN
-                EXIT;
-            END IF;
-        END LOOP;
-    END
-$$;
 
 -- тесты
 DO

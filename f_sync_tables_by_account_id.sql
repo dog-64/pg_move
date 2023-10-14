@@ -32,11 +32,15 @@ BEGIN
 
     -- Формируем SQL-запрос в зависимости от операции
     IF TG_OP = 'INSERT' THEN
-        query := FORMAT('INSERT INTO %s (%s) SELECT %s FROM %s WHERE id = %s', target_table, column_list, column_list,
-                        source_table, NEW.id);
+        query := FORMAT(
+                'INSERT INTO %s (%s) SELECT %s FROM %s WHERE id = %s ON CONFLICT (id) DO UPDATE SET (%s) = (SELECT %s FROM excluded) WHERE %s.id = excluded.id',
+                target_table, column_list, column_list,
+                source_table, NEW.id, column_list, column_list, target_table);
     ELSIF TG_OP = 'UPDATE' THEN
-        query := FORMAT('UPDATE %s SET (%s) = (SELECT %s FROM %s WHERE id = %s) WHERE id = %s', target_table,
-                        column_list, column_list, source_table, NEW.id, OLD.id);
+        query := FORMAT(
+                'UPDATE %s SET (%s) = (SELECT %s FROM %s WHERE id = %s) WHERE id = %s ON CONFLICT (id) DO UPDATE SET (%s) = (SELECT %s FROM excluded) WHERE %s.id = excluded.id',
+                target_table,
+                column_list, column_list, source_table, NEW.id, OLD.id, column_list, column_list, target_table);
     ELSIF TG_OP = 'DELETE' THEN
         query := FORMAT('DELETE FROM %s WHERE id = %s', target_table, OLD.id);
     END IF;
