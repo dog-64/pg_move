@@ -1,6 +1,7 @@
 -- вариант переноса изменений в таблице p1 в p2 
 ROLLBACK;
 DROP TABLE IF EXISTS orders_1;
+DROP TABLE IF EXISTS orders_2;
 DROP TABLE IF EXISTS orders_3;
 
 DROP TABLE IF EXISTS orders;
@@ -26,14 +27,25 @@ CREATE TABLE orders_1 PARTITION OF orders
     FOR VALUES FROM (1) TO (3); -- 3 не включается
 CREATE INDEX idx_orders_1_account_id ON orders_1 (account_id);
 
+-- структура дб такой же как у orders, кроме primary key
+CREATE TABLE orders_2
+(
+    id          bigint DEFAULT NEXTVAL('orders_id_seq'::regclass) NOT NULL,
+    account_id  bigint                                            NOT NULL,
+    client_id   bigint                                            NOT NULL,
+    items_price numeric(10, 2),
+--     PRIMARY KEY (account_id, id)
+    PRIMARY KEY (id)
+);
+
 CREATE TABLE orders_3
 (
     id          bigint DEFAULT NEXTVAL('orders_id_seq'::regclass) NOT NULL,
     account_id  bigint                                            NOT NULL,
     client_id   bigint                                            NOT NULL,
-    items_price numeric(10, 2)
+    items_price numeric(10, 2),
 --     PRIMARY KEY (account_id, id)
---     PRIMARY KEY (id)
+    PRIMARY KEY (id)
 );
 
 -- PSQL
@@ -61,6 +73,7 @@ DECLARE
 BEGIN
     source_table := TG_ARGV[0]; -- таблица-откуда
     target_table := TG_ARGV[1]; -- таблица-куда
+    -- TODO: возможно тут нужно умень передавать диапазоны
     account_ids := TG_ARGV[2:];
     -- список id копируемых account_id, как массив
 
@@ -113,19 +126,25 @@ $$ LANGUAGE plpgsql;
 
 -- Создание триггера с параметрами
 -- TODO: вынести в свою схему account_move.
-CREATE OR REPLACE TRIGGER sync_tables_by_account_id
+CREATE OR REPLACE TRIGGER sync_tables_by_account_id_1
+    AFTER INSERT OR UPDATE OR DELETE
+    ON orders_1
+    FOR EACH ROW
+EXECUTE FUNCTION f_sync_tables_by_account_id('orders_1', 'orders_2', 1);
+
+CREATE OR REPLACE TRIGGER sync_tables_by_account_id_2
     AFTER INSERT OR UPDATE OR DELETE
     ON orders_1
     FOR EACH ROW
 EXECUTE FUNCTION f_sync_tables_by_account_id('orders_1', 'orders_3', 2);
 
--- Проверка - после выполнения в p2 ДОЛЖНА появится запись 
+-- Проверка - после выполнения в orders_2 ДОЛЖНА появится запись 
 INSERT INTO orders(account_id, client_id, items_price)
-VALUES (2, 7, 8);
+VALUES (1, 2, 3);
 
--- Проверка - после выполнения в p2 НЕ ДОЛЖНА появится запись 
+-- Проверка - после выполнения в orders_3 ДОЛЖНА появится запись 
 INSERT INTO orders(account_id, client_id, items_price)
-VALUES (1, 7, 8);
+VALUES (2, 3, 4);
 
 -- основное копирование, после установки триггера
 
@@ -163,21 +182,35 @@ $$;
 -- TODO: сделать функцию
 -- TODO: вынести в свою схему account_move.
 BEGIN;
+-- TODO: тут должно быть определение триггеров 
+SELECT copy_between_tables('orders_1', 'orders_2', 1);
 SELECT copy_between_tables('orders_1', 'orders_3', 2);
 
 ALTER TABLE orders
     DETACH PARTITION orders_1;
 -- TODO: для прода - удаление пачками, в функции
-DELETE FROM orders_1 WHERE account_id = 2;
+-- очень долго
+-- DELETE FROM orders_1 WHERE account_id = 2;
+-- ALTER TABLE orders
+--     ATTACH PARTITION orders_1 FOR VALUES FROM (1) TO (2);
+ALTER TABLE orders_2
+    ADD CONSTRAINT account_id_check CHECK (account_id BETWEEN 1 AND 5000000);
+ALTER TABLE orders_2 DROP CONSTRAINT orders_2_pkey;
+DROP INDEX IF EXISTS orders_2_pkey;
 ALTER TABLE orders
-    ATTACH PARTITION orders_1 FOR VALUES FROM (1) TO (2);
+    ATTACH PARTITION orders_2 FOR VALUES FROM (1) TO (2);
+
 ALTER TABLE orders_3
     ADD CONSTRAINT account_id_check CHECK (account_id BETWEEN 1 AND 5000000);
+ALTER TABLE orders_3 DROP CONSTRAINT orders_3_pkey;
+DROP INDEX IF EXISTS orders_3_pkey;
 ALTER TABLE orders
     ATTACH PARTITION orders_3 FOR VALUES FROM (2) TO (3);
 
-DROP TRIGGER sync_tables_by_account_id ON orders_1;
+commit;
 END;
+DROP TRIGGER sync_tables_by_account_id_1 ON orders_1;
+DROP TRIGGER sync_tables_by_account_id_2 ON orders_1;
 
 DO $$ 
 DECLARE
