@@ -89,6 +89,8 @@ VALUES (2, 3, 4.1);
 CALL p_assert('SELECT EXISTS(SELECT 1 FROM orders_3 WHERE account_id = 2)');
 
 BEGIN;
+DELETE FROM orders_2 WHERE TRUE;
+DELETE FROM orders_3 WHERE TRUE;
 SELECT f_copy_between_tables_by_accounts('orders_1', 'orders_2', 1);
 SELECT f_copy_between_tables_by_accounts('orders_1', 'orders_3', 2);
 
@@ -118,11 +120,12 @@ DROP TRIGGER sync_tables_by_account_id_2 ON orders_1;
 
 -- тесты
 CALL p_assert('SELECT EXISTS(SELECT 1 FROM orders WHERE account_id = 1)');
-SELECT (SELECT count(*) FROM orders_1) = (SELECT count(*) FROM orders_1 WHERE account_id = 1);
 CALL p_assert('SELECT EXISTS(SELECT 1 FROM orders WHERE account_id = 2)');
+CALL p_assert('SELECT (SELECT count(*) FROM orders_2) = (SELECT count(*) FROM orders_1 WHERE account_id = 1)');
 
 CALL p_assert('SELECT EXISTS(SELECT 1 FROM orders_2 WHERE account_id = 1)');
 CALL p_assert('SELECT NOT EXISTS(SELECT 1 FROM orders_2 WHERE account_id = 2)');
+CALL p_assert('SELECT (SELECT count(*) FROM orders_3) = (SELECT count(*) FROM orders_1 WHERE account_id = 2)');
 
 CALL p_assert('SELECT EXISTS(SELECT 1 FROM orders_3 WHERE account_id = 2)');
 CALL p_assert('SELECT NOT EXISTS(SELECT 1 FROM orders_3 WHERE account_id = 1)');

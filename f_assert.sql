@@ -1,14 +1,11 @@
-CREATE OR REPLACE PROCEDURE p_assert(query text)
+CREATE OR REPLACE PROCEDURE p_assert(query_result BOOLEAN)
 LANGUAGE plpgsql AS
 $$
-DECLARE
-    result BOOLEAN;
 BEGIN
-    EXECUTE query INTO result;
-    IF NOT result THEN
-        RAISE EXCEPTION 'Assertion failed: %', query;
+    IF NOT query_result THEN
+        RAISE EXCEPTION 'Assertion failed';
     ELSE
-        RAISE NOTICE 'OK: %', query;
+        RAISE NOTICE 'OK';
     END IF;
 END;
 $$;
