@@ -1,11 +1,13 @@
 # pg_move
 
-Перемещение записей между таблицами одинаковой структуры.  
+Перемещение записей между секциями таблиц Postgres.  
 Например, при перебалансировке секций.
-
 Ключ партицирования - account_id  
 
+Размер секций до 50ГБ с числом акаунтов до 2000.
+
 - [PgRepack](https://github.com/reorg/pg_repack/blob/master/lib/pg_repack.sql.in)
+- [partition create](https://supabase.com/blog/postgres-dynamic-table-partitioning)
 
 ## Todo
 

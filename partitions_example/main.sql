@@ -1,4 +1,4 @@
--- вариант переноса изменений в таблице p1 в p2 
+-- второй вариант переноса разделения секции order_1 на две другие - 2 и 3  
 ROLLBACK;
 DROP TABLE IF EXISTS orders_1;
 DROP TABLE IF EXISTS orders_2;
@@ -9,7 +9,7 @@ DROP TRIGGER IF EXISTS sync_tables_by_account_id ON orders_2;
 
 
 DROP TABLE IF EXISTS orders;
-DROP SEQUENCE orders_id_seq;
+DROP SEQUENCE IF EXISTS orders_id_seq;
 
 CREATE SEQUENCE orders_id_seq;
 
@@ -60,7 +60,7 @@ INSERT INTO orders (account_id, client_id, items_price)
 SELECT FLOOR(RANDOM() * 2 + 1)::bigint,                    -- случайное значение для account_id между 1 и 10
        FLOOR(RANDOM() * 10000)::bigint,                    -- случайное значение для client_id
        ROUND((RANDOM() * 100)::numeric, 2)::numeric(10, 2) -- случайное значение для items_price
-FROM GENERATE_SERIES(1, 1000000);
+FROM GENERATE_SERIES(1, 100000000);
 COMMIT;
 
 -- Создание триггера с параметрами
