@@ -14,14 +14,16 @@ BEGIN
     FROM information_schema.columns
     WHERE table_name = source_table;
 
-    RAISE NOTICE  'INSERT -------------';
     -- Формируем и выполняем SQL-запрос для копирования данных
     query := FORMAT(
-            'INSERT INTO $1%I ($2%s) SELECT $2%s FROM $3%I WHERE account_id = ANY($4%L) ON CONFLICT DO NOTHING',
-            target_table,
-            column_list,
-            source_table,
-            $1
+        $i$
+            INSERT INTO %1$I (%2$s) 
+            SELECT %2$s FROM %3$I WHERE account_id = ANY($1) 
+            ON CONFLICT DO NOTHING
+        $i$, 
+        target_table,   -- 1
+        column_list,    -- 2
+        source_table    -- 3
         );
     EXECUTE query USING account_ids;
 END;

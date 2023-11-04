@@ -61,7 +61,7 @@ SELECT FLOOR(RANDOM() * 2 + 1)::bigint,                    -- случайное
        FLOOR(RANDOM() * 10_000)::bigint,                    -- случайное значение для client_id
        ROUND((RANDOM() * 100)::numeric, 2)::numeric(10, 2) -- случайное значение для items_price
     
-FROM GENERATE_SERIES(1, 1_000_000);
+FROM GENERATE_SERIES(1, 100_000);
 COMMIT;
 
 -- Создание триггера с параметрами
