@@ -33,13 +33,15 @@ BEGIN
 
     -- Формируем SQL-запрос в зависимости от операции
     IF TG_OP = 'INSERT' THEN
+        RAISE NOTICE 'INSERT';
         query := FORMAT(
             $i$
-            INSERT INTO $1%I ($2%s) 
-            SELECT $2%s FROM $3%I WHERE id = $4%L 
-            ON CONFLICT (id) 
-            DO UPDATE SET ($2%s) = (SELECT $2%s FROM $1%I) 
-                WHERE $1%I.id = $4%L
+                INSERT INTO %1$I (%2$s) 
+                SELECT %2$s FROM %3$I WHERE id = %4$L 
+                ON CONFLICT (id) 
+                DO UPDATE SET (%2$s) = (SELECT %2$s FROM %1$I) 
+    
+                    WHERE %1$I.id = %4$L
             $i$, 
             target_table, --1 
             column_list, -- 2 
@@ -49,11 +51,8 @@ BEGIN
     ELSIF TG_OP = 'UPDATE' THEN
         query := FORMAT(
             $i$
-            UPDATE $1%s SET ($2%s) = (SELECT $2%s FROM $3%s WHERE id = $4%s)
-                WHERE id = $5%s 
-            ON CONFLICT (id) 
-            DO UPDATE SET ($2%s) = (SELECT $2%s FROM excluded) 
-                WHERE $1%s.id = excluded.id',
+                UPDATE %1$s SET (%2$s) = (SELECT %2$s FROM %3$s WHERE id = %4$s)
+                    WHERE id = %5$s 
             $i$, 
             target_table, --1
             column_list, -- 2
