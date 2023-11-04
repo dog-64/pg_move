@@ -40,7 +40,6 @@ BEGIN
                 SELECT %2$s FROM %3$I WHERE id = %4$L 
                 ON CONFLICT (id) 
                 DO UPDATE SET (%2$s) = (SELECT %2$s FROM %1$I) 
-    
                     WHERE %1$I.id = %4$L
             $i$, 
             target_table, --1 
