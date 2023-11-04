@@ -2,7 +2,7 @@
 
 Перемещение записей между секциями таблиц Postgres.  
 Например, при перебалансировке секций.
-Ключ партицирования - account_id  
+Ключ партицирования - account_id
 
 Размер секций до 50ГБ с числом акаунтов до 2000.
 
@@ -20,7 +20,7 @@
 - проверить на разделе 50GB
 - проверить выполнение при идущих изменениях
 - заменить в триггере INSERT INTO ... SELECT на INSERT INTO ... VALUES(NEW.*)
-- добавление таблицы секции 
+- добавление таблицы секции
 
 ## Для таблиц
 
@@ -50,3 +50,22 @@
 | ADD CONSTRAINT o2           | 1     | 1        |     |
 | ATTACH PARTITION o3         | 9     | 3        |     |
 | **ИТОГО**                   | 120   |          |     |
+
+## Проблемы
+
+В Postgres 14/16 при выполнении
+
+```postgresql
+-- Проверка - после выполнения в orders_2 ДОЛЖНА появится запись 
+INSERT INTO orders(account_id, client_id, items_price)
+VALUES (1, 2, 3);
+```
+в функции `f_sync_tables_by_account_id` jib,rf
+```log
+[2023-11-04 12:43:50] [42P01] ERROR: relation "excluded" does not exist
+[2023-11-04 12:43:50] Where: PL/pgSQL function f_sync_tables_by_account_id() line 46 at EXECUTE
+```
+Причина - нужно было 
+```postgresql
+ALTER FUNCTION f_sync_tables_by_account_id() OWNER TO postgres;
+```

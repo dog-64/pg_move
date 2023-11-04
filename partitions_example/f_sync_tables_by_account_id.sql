@@ -1,5 +1,6 @@
-CREATE OR REPLACE FUNCTION f_sync_tables_by_account_id()
-    RETURNS TRIGGER AS
+CREATE OR REPLACE FUNCTION f_sync_tables_by_account_id() RETURNS trigger
+    LANGUAGE plpgsql
+AS
 $$
 DECLARE
     source_table       text;
@@ -32,10 +33,11 @@ BEGIN
 
     -- Формируем SQL-запрос в зависимости от операции
     IF TG_OP = 'INSERT' THEN
+        RAISE NOTICE 'INSERT';
         query := FORMAT(
-                'INSERT INTO %s (%s) SELECT %s FROM %s WHERE id = %s ON CONFLICT (id) DO UPDATE SET (%s) = (SELECT %s FROM excluded) WHERE %s.id = excluded.id',
+                'INSERT INTO %I (%s) SELECT %s FROM %I WHERE id = %L ON CONFLICT (id) DO UPDATE SET (%s) = (SELECT %s FROM %I) WHERE %I.id = EXCLUDED.id',
                 target_table, column_list, column_list,
-                source_table, NEW.id, column_list, column_list, target_table);
+                source_table, NEW.id, column_list, column_list, target_table, target_table);
     ELSIF TG_OP = 'UPDATE' THEN
         query := FORMAT(
                 'UPDATE %s SET (%s) = (SELECT %s FROM %s WHERE id = %s) WHERE id = %s ON CONFLICT (id) DO UPDATE SET (%s) = (SELECT %s FROM excluded) WHERE %s.id = excluded.id',
@@ -49,4 +51,6 @@ BEGIN
 
     RETURN NULL;
 END;
-$$ LANGUAGE plpgsql;
+$$;
+
+ALTER FUNCTION f_sync_tables_by_account_id() OWNER TO postgres;
