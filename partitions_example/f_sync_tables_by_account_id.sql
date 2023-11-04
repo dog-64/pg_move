@@ -33,16 +33,34 @@ BEGIN
 
     -- Формируем SQL-запрос в зависимости от операции
     IF TG_OP = 'INSERT' THEN
-        RAISE NOTICE 'INSERT';
         query := FORMAT(
-                'INSERT INTO %I (%s) SELECT %s FROM %I WHERE id = %L ON CONFLICT (id) DO UPDATE SET (%s) = (SELECT %s FROM %I) WHERE %I.id = %L',
-                target_table, column_list, column_list,
-                source_table, NEW.id, column_list, column_list, target_table, target_table, NEW.id);
+            $i$
+            INSERT INTO $1%I ($2%s) 
+            SELECT $2%s FROM $3%I WHERE id = $4%L 
+            ON CONFLICT (id) 
+            DO UPDATE SET ($2%s) = (SELECT $2%s FROM $1%I) 
+                WHERE $1%I.id = $4%L
+            $i$, 
+            target_table, --1 
+            column_list, -- 2 
+            source_table, -- 3 
+            NEW.id -- 4
+            );
     ELSIF TG_OP = 'UPDATE' THEN
         query := FORMAT(
-                'UPDATE %s SET (%s) = (SELECT %s FROM %s WHERE id = %s) WHERE id = %s ON CONFLICT (id) DO UPDATE SET (%s) = (SELECT %s FROM excluded) WHERE %s.id = excluded.id',
-                target_table,
-                column_list, column_list, source_table, NEW.id, OLD.id, column_list, column_list, target_table);
+            $i$
+            UPDATE $1%s SET ($2%s) = (SELECT $2%s FROM $3%s WHERE id = $4%s)
+                WHERE id = $5%s 
+            ON CONFLICT (id) 
+            DO UPDATE SET ($2%s) = (SELECT $2%s FROM excluded) 
+                WHERE $1%s.id = excluded.id',
+            $i$, 
+            target_table, --1
+            column_list, -- 2
+            source_table, -- 3 
+            NEW.id, -- 4
+            OLD.id -- 5
+            );
     ELSIF TG_OP = 'DELETE' THEN
         query := FORMAT('DELETE FROM %s WHERE id = %s', target_table, OLD.id);
     END IF;
