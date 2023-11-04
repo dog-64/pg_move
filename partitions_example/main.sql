@@ -58,7 +58,7 @@ SET LOCAL SYNCHRONOUS_COMMIT TO 'off';
 
 INSERT INTO orders (account_id, client_id, items_price)
 SELECT FLOOR(RANDOM() * 2 + 1)::bigint,                    -- случайное значение для account_id между 1 и 10
-       FLOOR(RANDOM() * 10000)::bigint,                    -- случайное значение для client_id
+       FLOOR(RANDOM() * 10_000)::bigint,                    -- случайное значение для client_id
        ROUND((RANDOM() * 100)::numeric, 2)::numeric(10, 2) -- случайное значение для items_price
     
 FROM GENERATE_SERIES(1, 1_000_000);
@@ -99,7 +99,7 @@ ALTER TABLE orders
     DETACH PARTITION orders_1;
 -- DELETE очень долго - проще пересоздать раздел, это лучше и потому что первоначальный раздел сохраняется неизменным и его можно использовать, если проблемы 
 ALTER TABLE orders_2
-    ADD CONSTRAINT account_id_check CHECK (account_id BETWEEN 1 AND 5000000);
+    ADD CONSTRAINT account_id_check CHECK (account_id BETWEEN 1 AND 5_000_000);
 ALTER TABLE orders_2
     DROP CONSTRAINT orders_2_pkey;
 DROP INDEX IF EXISTS orders_2_pkey;
@@ -107,7 +107,7 @@ ALTER TABLE orders
     ATTACH PARTITION orders_2 FOR VALUES FROM (1) TO (2);
 
 ALTER TABLE orders_3
-    ADD CONSTRAINT account_id_check CHECK (account_id BETWEEN 1 AND 5000000);
+    ADD CONSTRAINT account_id_check CHECK (account_id BETWEEN 1 AND 5_000_000);
 ALTER TABLE orders_3
     DROP CONSTRAINT orders_3_pkey;
 DROP INDEX IF EXISTS orders_3_pkey;

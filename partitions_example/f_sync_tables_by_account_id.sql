@@ -35,9 +35,9 @@ BEGIN
     IF TG_OP = 'INSERT' THEN
         RAISE NOTICE 'INSERT';
         query := FORMAT(
-                'INSERT INTO %I (%s) SELECT %s FROM %I WHERE id = %L ON CONFLICT (id) DO UPDATE SET (%s) = (SELECT %s FROM %I) WHERE %I.id = EXCLUDED.id',
+                'INSERT INTO %I (%s) SELECT %s FROM %I WHERE id = %L ON CONFLICT (id) DO UPDATE SET (%s) = (SELECT %s FROM %I) WHERE %I.id = %L',
                 target_table, column_list, column_list,
-                source_table, NEW.id, column_list, column_list, target_table, target_table);
+                source_table, NEW.id, column_list, column_list, target_table, target_table, NEW.id);
     ELSIF TG_OP = 'UPDATE' THEN
         query := FORMAT(
                 'UPDATE %s SET (%s) = (SELECT %s FROM %s WHERE id = %s) WHERE id = %s ON CONFLICT (id) DO UPDATE SET (%s) = (SELECT %s FROM excluded) WHERE %s.id = excluded.id',
