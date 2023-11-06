@@ -32,38 +32,28 @@ BEGIN
     WHERE table_name = source_table;
 
     -- Формируем SQL-запрос в зависимости от операции
-    IF TG_OP = 'INSERT' THEN
-        RAISE NOTICE 'INSERT';
+    IF TG_OP = 'INSERT' OR TG_OP = 'UPDATE' THEN
         query := FORMAT(
             $i$
                 INSERT INTO %1$I (%2$s) 
-                SELECT %2$s FROM %3$I WHERE id = %4$L 
+                SELECT %2$s FROM %3$I WHERE id = %4$L AND account_id = %5$L 
                 ON CONFLICT (id) 
-                DO UPDATE SET (%2$s) = (SELECT %2$s FROM %1$I) 
-                    WHERE %1$I.id = %4$L
+                DO UPDATE SET (%2$s) = (
+                    SELECT %2$s FROM %3$I
+                    WHERE id = %4$L AND account_id = %5$L 
+                    )
             $i$, 
             target_table, --1 
             column_list, -- 2 
             source_table, -- 3 
-            NEW.id -- 4
-            );
-    ELSIF TG_OP = 'UPDATE' THEN
-        query := FORMAT(
-            $i$
-                UPDATE %1$s 
-                    SET (%2$s) = (SELECT %2$s FROM %3$s WHERE id = %4$s)
-                    WHERE id = %5$s 
-            $i$, 
-            target_table, --1
-            column_list, -- 2
-            source_table, -- 3 
             NEW.id, -- 4
-            OLD.id -- 5
+            NEW.account_id -- 5
             );
     ELSIF TG_OP = 'DELETE' THEN
         query := FORMAT('DELETE FROM %s WHERE id = %s', target_table, OLD.id);
     END IF;
 
+    -- RAISE NOTICE 'query "%"', query;
     EXECUTE query;
 
     RETURN NULL;

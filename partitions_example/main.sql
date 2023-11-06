@@ -53,16 +53,17 @@ CREATE TABLE orders_3
 
 -- PSQL
 BEGIN;
--- Отключаем журналирование транзакций для увеличения скорости вставки
-SET LOCAL SYNCHRONOUS_COMMIT TO 'off';
-
-INSERT INTO orders (account_id, client_id, items_price)
-SELECT FLOOR(RANDOM() * 2 + 1)::bigint,                    -- случайное значение для account_id между 1 и 10
-       FLOOR(RANDOM() * 10_000)::bigint,                    -- случайное значение для client_id
-       ROUND((RANDOM() * 100)::numeric, 2)::numeric(10, 2) -- случайное значение для items_price
+    -- Отключаем журналирование транзакций для увеличения скорости вставки
+    SET LOCAL SYNCHRONOUS_COMMIT TO 'off';
     
-FROM GENERATE_SERIES(1, 100_000);
-COMMIT;
+    INSERT INTO orders (account_id, client_id, items_price)
+    SELECT FLOOR(RANDOM() * 2 + 1)::bigint,
+           FLOOR(RANDOM() * 10_000)::bigint,
+           ROUND((RANDOM() * 100)::numeric, 2)::numeric(10, 2)
+    
+    FROM GENERATE_SERIES(1, 100_000_000);
+    COMMIT;
+END;
 
 -- Создание триггера с параметрами
 -- TODO: вынести в свою схему account_move.
@@ -89,33 +90,37 @@ INSERT INTO orders(account_id, client_id, items_price)
 VALUES (2, 3, 4.1);
 CALL p_assert('SELECT EXISTS(SELECT 1 FROM orders_3 WHERE account_id = 2)');
 
+SELECT 'START -------------------------------', now();
 BEGIN;
-DELETE FROM orders_2 WHERE TRUE;
-DELETE FROM orders_3 WHERE TRUE;
-SELECT f_copy_between_tables_by_accounts('orders_1', 'orders_2', 1);
-SELECT f_copy_between_tables_by_accounts('orders_1', 'orders_3', 2);
+    TRUNCATE TABLE  orders_2;
+    TRUNCATE TABLE  orders_3;
 
-ALTER TABLE orders
-    DETACH PARTITION orders_1;
--- DELETE очень долго - проще пересоздать раздел, это лучше и потому что первоначальный раздел сохраняется неизменным и его можно использовать, если проблемы 
-ALTER TABLE orders_2
-    ADD CONSTRAINT account_id_check CHECK (account_id BETWEEN 1 AND 5_000_000);
-ALTER TABLE orders_2
-    DROP CONSTRAINT orders_2_pkey;
-DROP INDEX IF EXISTS orders_2_pkey;
-ALTER TABLE orders
-    ATTACH PARTITION orders_2 FOR VALUES FROM (1) TO (2);
-
-ALTER TABLE orders_3
-    ADD CONSTRAINT account_id_check CHECK (account_id BETWEEN 1 AND 5_000_000);
-ALTER TABLE orders_3
-    DROP CONSTRAINT orders_3_pkey;
-DROP INDEX IF EXISTS orders_3_pkey;
-ALTER TABLE orders
-    ATTACH PARTITION orders_3 FOR VALUES FROM (2) TO (3);
--- DROP TABLE orders_1
-COMMIT;
+    SELECT 'COPY -------------------------------', now();
+    SELECT f_copy_between_tables_by_accounts('orders_1', 'orders_2', 1);
+    SELECT f_copy_between_tables_by_accounts('orders_1', 'orders_3', 2);
+    
+    ALTER TABLE orders
+        DETACH PARTITION orders_1;
+    -- DELETE очень долго - проще пересоздать раздел, это лучше и потому что первоначальный раздел сохраняется неизменным и его можно использовать, если проблемы 
+    ALTER TABLE orders_2
+        ADD CONSTRAINT account_id_check CHECK (account_id BETWEEN 1 AND 5_000_000);
+    ALTER TABLE orders_2
+        DROP CONSTRAINT orders_2_pkey;
+    DROP INDEX IF EXISTS orders_2_pkey;
+    ALTER TABLE orders
+        ATTACH PARTITION orders_2 FOR VALUES FROM (1) TO (2);
+    
+    ALTER TABLE orders_3
+        ADD CONSTRAINT account_id_check CHECK (account_id BETWEEN 1 AND 5_000_000);
+    ALTER TABLE orders_3
+        DROP CONSTRAINT orders_3_pkey;
+    DROP INDEX IF EXISTS orders_3_pkey;
+    ALTER TABLE orders
+        ATTACH PARTITION orders_3 FOR VALUES FROM (2) TO (3);
+    -- DROP TABLE orders_1
+    COMMIT;
 END;
+SELECT 'FINISH -------------------------------', now();
 DROP TRIGGER sync_tables_by_account_id_1 ON orders_1;
 DROP TRIGGER sync_tables_by_account_id_2 ON orders_1;
 

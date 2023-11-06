@@ -51,6 +51,14 @@
 | ATTACH PARTITION o3         | 9     | 3        |     |
 | **ИТОГО**                   | 120   |          |     |
 
+## 100M записей
+
+|                                       |     |     |     | вставка в др.сессии |
+|---------------------------------------|-----|-----|-----|---------------------|
+| 100M записей без параллельной вставки | 370 | 374 | 376 |                     |
+| 100м записей и вставка 100К           | 459 | 439 |     | 17                  |
+|                                       |     |     |     |                     |
+
 ## Проблемы
 
 В Postgres 14/16 при выполнении
@@ -60,12 +68,16 @@
 INSERT INTO orders(account_id, client_id, items_price)
 VALUES (1, 2, 3);
 ```
+
 в функции `f_sync_tables_by_account_id` jib,rf
+
 ```log
 [2023-11-04 12:43:50] [42P01] ERROR: relation "excluded" does not exist
 [2023-11-04 12:43:50] Where: PL/pgSQL function f_sync_tables_by_account_id() line 46 at EXECUTE
 ```
-Причина - нужно было 
+
+Причина - нужно было
+
 ```postgresql
 ALTER FUNCTION f_sync_tables_by_account_id() OWNER TO postgres;
 ```
