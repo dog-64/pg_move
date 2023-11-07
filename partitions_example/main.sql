@@ -9,7 +9,7 @@ DROP TRIGGER IF EXISTS sync_tables_by_account_id ON orders_2;
 
 
 DROP TABLE IF EXISTS orders;
-DROP SEQUENCE IF EXISTS orders_id_seq;
+DROP SEQUENCE IF EXISTS orders_id_seq CASCADE ;
 
 CREATE SEQUENCE orders_id_seq;
 
@@ -18,7 +18,7 @@ CREATE TABLE orders
     id          bigint DEFAULT NEXTVAL('orders_id_seq'::regclass),
     account_id  bigint,
     client_id   bigint NOT NULL,
-    items_price numeric(10, 2),
+    items_price numeric(10, 4),
     PRIMARY KEY (account_id, id),
     CONSTRAINT account_id_check CHECK (account_id BETWEEN 1 AND 5000000)
 ) PARTITION BY RANGE (account_id);
@@ -36,7 +36,7 @@ CREATE TABLE orders_2
     id          bigint DEFAULT NEXTVAL('orders_id_seq'::regclass) NOT NULL,
     account_id  bigint                                            NOT NULL,
     client_id   bigint                                            NOT NULL,
-    items_price numeric(10, 2),
+    items_price numeric(10, 4),
 --     PRIMARY KEY (account_id, id)
     PRIMARY KEY (id)
 );
@@ -46,7 +46,7 @@ CREATE TABLE orders_3
     id          bigint DEFAULT NEXTVAL('orders_id_seq'::regclass) NOT NULL,
     account_id  bigint                                            NOT NULL,
     client_id   bigint                                            NOT NULL,
-    items_price numeric(10, 2),
+    items_price numeric(10, 4),
 --     PRIMARY KEY (account_id, id)
     PRIMARY KEY (id)
 );
@@ -68,27 +68,31 @@ END;
 -- Создание триггера с параметрами
 -- TODO: вынести в свою схему account_move.
 
-CREATE OR REPLACE TRIGGER sync_tables_by_account_id_1
+-- создаем таблицу лога изменений исходной таблицы
+DROP TABLE IF EXISTS orders_1_log;
+CREATE TABLE orders_1_log (LIKE orders INCLUDING ALL);
+
+CREATE OR REPLACE TRIGGER sync_tables
     AFTER INSERT OR UPDATE OR DELETE
     ON orders_1
     FOR EACH ROW
-EXECUTE FUNCTION f_sync_tables_by_account_id('orders_1', 'orders_2', 1);
+EXECUTE FUNCTION f_sync_tables('orders_1', 'orders_1_log');
 
-CREATE OR REPLACE TRIGGER sync_tables_by_account_id_2
-    AFTER INSERT OR UPDATE OR DELETE
-    ON orders_1
-    FOR EACH ROW
-EXECUTE FUNCTION f_sync_tables_by_account_id('orders_1', 'orders_3', 2);
-
--- Проверка - после выполнения в orders_2 ДОЛЖНА появится запись 
+-- Проверка - после выполнения в orders_1_log ДОЛЖНА появится запись 
 INSERT INTO orders(account_id, client_id, items_price)
 VALUES (1, 2, 3);
-CALL p_assert('SELECT EXISTS(SELECT 1 FROM orders_2 WHERE account_id = 1)');
+CALL p_assert('SELECT EXISTS(SELECT 1 FROM orders_1_log WHERE account_id = 1 AND client_id = 2 AND items_price = 3)');
 
--- Проверка - после выполнения в orders_3 ДОЛЖНА появится запись 
-INSERT INTO orders(account_id, client_id, items_price)
-VALUES (2, 3, 4.1);
-CALL p_assert('SELECT EXISTS(SELECT 1 FROM orders_3 WHERE account_id = 2)');
+DELETE FROM orders WHERE account_id = 1 AND client_id = 2;
+CALL p_assert('SELECT NOT EXISTS(SELECT 1 FROM orders_1_log WHERE account_id = 1 AND client_id = 2)');
+
+-- эти вставки должны будут появиться в orders_1_log
+INSERT INTO orders (account_id, client_id, items_price)
+SELECT FLOOR(RANDOM() * 2 + 1)::bigint,
+       FLOOR(RANDOM() * 10_000)::bigint,
+       5.1234
+FROM GENERATE_SERIES(1, 1_000);
+
 
 SELECT 'START -------------------------------', now();
 BEGIN;
@@ -98,7 +102,7 @@ BEGIN;
     SELECT 'COPY -------------------------------', now();
     SELECT f_copy_between_tables_by_accounts('orders_1', 'orders_2', 1);
     SELECT f_copy_between_tables_by_accounts('orders_1', 'orders_3', 2);
-    
+
     ALTER TABLE orders
         DETACH PARTITION orders_1;
     -- DELETE очень долго - проще пересоздать раздел, это лучше и потому что первоначальный раздел сохраняется неизменным и его можно использовать, если проблемы 
@@ -118,11 +122,14 @@ BEGIN;
     ALTER TABLE orders
         ATTACH PARTITION orders_3 FOR VALUES FROM (2) TO (3);
     -- DROP TABLE orders_1
+
+    SELECT f_copy_tables('orders_1_log', 'orders');
+    -- DROP TABLE orders_1_log;
+
     COMMIT;
 END;
 SELECT 'FINISH -------------------------------', now();
-DROP TRIGGER sync_tables_by_account_id_1 ON orders_1;
-DROP TRIGGER sync_tables_by_account_id_2 ON orders_1;
+DROP TRIGGER sync_tables ON orders_1;
 
 -- тесты
 CALL p_assert('SELECT EXISTS(SELECT 1 FROM orders WHERE account_id = 1)');
@@ -135,3 +142,5 @@ CALL p_assert('SELECT (SELECT count(*) FROM orders_3) = (SELECT count(*) FROM or
 
 CALL p_assert('SELECT EXISTS(SELECT 1 FROM orders_3 WHERE account_id = 2)');
 CALL p_assert('SELECT NOT EXISTS(SELECT 1 FROM orders_3 WHERE account_id = 1)');
+
+CALL p_assert('SELECT 1_000 <= (SELECT count(*) FROM orders WHERE items_price = 5.1234)');

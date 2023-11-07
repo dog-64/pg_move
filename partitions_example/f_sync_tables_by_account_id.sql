@@ -50,6 +50,7 @@ BEGIN
             NEW.account_id -- 5
             );
     ELSIF TG_OP = 'DELETE' THEN
+        -- TODO: переделать как в f_sync_tables
         query := FORMAT('DELETE FROM %s WHERE id = %s', target_table, OLD.id);
     END IF;
 
